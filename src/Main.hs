@@ -2,12 +2,13 @@
 
 module Main where
 
-import Data.Ratio
 import Putzplan
 
 wGroups :: [WeightedGroup]
-wGroups = [WeightedGroup "foo" (51 % 100),
-           WeightedGroup "bar" (49 % 100)]
+wGroups = [WeightedGroup "Group 1" 0.3,
+           WeightedGroup "Group 2" 0.4,
+           WeightedGroup "Group 3" 0.1,
+           WeightedGroup "Group 4" 0.2]
 
 groupMap :: GroupMap
 groupMap = initGroupMap wGroups

@@ -28,7 +28,7 @@ the group g has crossed the threshold value one. last_g holds the most
 recent timestamp at which the group g had to clean.
 
 The groups start with some score s_g -- it doesn't really matter what
-that is. I set it one.
+that is. I initialize them to zero.
 
 To compute the next group which has to clean, the algorithm adds the
 weight w_g to each group's score s_g. All groups g whose scores s_g
@@ -39,7 +39,7 @@ timestamps. To implement this, there is an ordering defined on the
 groups which does the work for us: Groups which have crossed the
 threshold earlier are 'more critical' and so are groups which had been
 picked longer ago. The picked group will have its last_g timestamp set
-to the current time.
+to the current time and its score s_g decreased by one.
 
 Time is then incremented and the next group can be computed. -MS
 
@@ -123,7 +123,7 @@ initGroupMap = foldl addWGroup M.empty
           let groupMeta = GroupMeta { groupMetaWeight  = weight
                                     , groupMetaCrossed = Nothing
                                     , groupMetaLast    = Nothing
-                                    , groupMetaScore   = 1
+                                    , groupMetaScore   = 0
                                     }
           in M.insert group groupMeta gMap
 
@@ -149,10 +149,9 @@ resetScores time = M.map reset
   where reset :: GroupMeta -> GroupMeta
         reset gMeta =
           let score = groupMetaScore gMeta
-              (_, frac) = properFraction score :: (Integer, Rational)
           in gMeta { groupMetaCrossed = Nothing
                    , groupMetaLast    = Just time
-                   , groupMetaScore   = frac
+                   , groupMetaScore   = score - 1
                    }
 
 -- | Return those Groups which have crossed the threshold (one).
@@ -189,7 +188,7 @@ putzplan time gMap =
       time'      = succ time                -- This will be the new
                                             -- time.
   in case M.toList critGroup of
-       []       -> (time, "", gMap') : putzplan time' gMap'
+       []       -> putzplan time  gMap'
        (g, _):_ -> (time, g,  gMap') : putzplan time' gMap''
                    -- Reset Score for critGroup and update
                    -- groupMetaLast & groupMetaCrossed.
