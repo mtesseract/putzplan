@@ -1,8 +1,11 @@
 -- Copyright (C) 2015 Moritz Schulte <mtesseract@silverratio.net>
 
-module Putzplan (Group, WeightedGroup(..), Putzplan,
+module Putzplan (Group, GroupInit(..), Putzplan, Time,
+                 Weight, GroupInitMap,
                  putzplan, printPutzplan, printPutzplan',
-                 GroupMap, initGroupMap) where
+                 PutzplanState, initPutzplanState,
+                 GroupMap, initGroupMap, groupMapDump,
+                 putzplanStateDump) where
 
 {-|
 Module      : Putzplan
@@ -47,7 +50,6 @@ Time is then incremented and the next group can be computed. -MS
 
 import qualified Data.Map as M
 import           Data.Maybe
-import           Data.Ratio
 
 -- | A Group is a String.
 type Group = String
@@ -55,6 +57,12 @@ type Group = String
 -- | A Weight is a rational number. Actually only rational numbers in
 -- the closed unit interval are allowed.
 type Weight = Rational
+
+data GroupInit = GroupInit { groupWeight :: Weight
+                           , groupScore :: Score
+                           } deriving (Show)
+
+type GroupInitMap = M.Map Group GroupInit
 
 -- | A WeightedGroup is a Group together with a Weight.
 data WeightedGroup = WeightedGroup Group Weight deriving (Show)
@@ -66,7 +74,7 @@ type Score = Rational
 type Time = Integer
 
 -- | This is the Putzplan type.
-type Putzplan = [(Time, Group, GroupMap)]
+type Putzplan = [(Group, PutzplanState)]
 
 -- | Associated to Groups are a (constant) Weight and a (varying)
 -- Score.
@@ -79,6 +87,10 @@ data GroupMeta =
 
 -- | A GroupMap is a mapping from Group values to GroupMeta values.
 type GroupMap = M.Map Group GroupMeta
+
+data PutzplanState = PutzplanState { putzplanTime   :: Time
+                                   , putzplanGroups :: GroupMap
+                                   } deriving (Show)
 
 -- | We make GroupMeta values comparable in terms of their Score and
 -- their Timestamps. Bigger means 'more critical'.
@@ -116,16 +128,13 @@ instance Ord GroupMeta where
 
 -- | This function initializes a GroupMap given a list of
 -- WeightedGroup values.
-initGroupMap :: [WeightedGroup] -> GroupMap
-initGroupMap = foldl addWGroup M.empty
-  where addWGroup :: GroupMap -> WeightedGroup -> GroupMap
-        addWGroup gMap (WeightedGroup group weight) =
-          let groupMeta = GroupMeta { groupMetaWeight  = weight
-                                    , groupMetaCrossed = Nothing
-                                    , groupMetaLast    = Nothing
-                                    , groupMetaScore   = 0
-                                    }
-          in M.insert group groupMeta gMap
+initGroupMap :: GroupInitMap -> GroupMap
+initGroupMap = M.map initGroup
+  where initGroup :: GroupInit -> GroupMeta
+        initGroup g = GroupMeta { groupMetaWeight  = groupWeight g
+                                , groupMetaCrossed = Nothing
+                                , groupMetaLast    = Nothing
+                                , groupMetaScore   = groupScore g }
 
 -- | Adds Weight to Score inside a GroupMeta value. If the Score is
 -- smaller than one before the addition, increment the time.
@@ -159,24 +168,26 @@ thresholdGroups :: GroupMap -> GroupMap
 thresholdGroups = M.filter thresholdReached 
   where thresholdReached gMeta = groupMetaScore gMeta >= 1
 
--- | Returns the GroupMap containing only the most critical
--- group. Returns the empty map if the provided GroupMap is empty.
-mostCritical :: GroupMap -> GroupMap
-mostCritical gMap =
-  let maybeMap = M.foldlWithKey findMostCritical Nothing gMap
-  in case maybeMap of
-       Nothing -> M.empty
-       Just g -> M.fromList [g]
+-- | Returns Just the GroupMap containing only the most critical
+-- group. Returns Nothing if the provided GroupMap is empty.
+mostCritical :: GroupMap -> Maybe (Group, GroupMeta)
+mostCritical gMap = M.foldlWithKey findMostCritical Nothing gMap
   where findMostCritical a' k b =
           case a' of
             Nothing -> Just (k, b)
             Just (_, a) -> if a > b then a' else Just (k, b)
 
+initPutzplanState :: Time -> GroupInitMap -> PutzplanState
+initPutzplanState time groupInitMap =
+  PutzplanState { putzplanTime   = time
+                , putzplanGroups = initGroupMap groupInitMap }
+
 -- | Generates the Putzplan.
-putzplan :: Time -- ^ Current Time
-         -> GroupMap -> Putzplan
-putzplan time gMap =
-  let gMap'      = increaseScores time gMap -- Increase all Scores by
+putzplan :: PutzplanState -> Putzplan
+putzplan pps =
+  let time       = putzplanTime pps
+      gMap       = putzplanGroups pps
+      gMap'      = increaseScores time gMap -- Increase all Scores by
                                             -- the appropriate
                                             -- weights.
       critGroups = thresholdGroups gMap'    -- Extract the groups that
@@ -187,31 +198,41 @@ putzplan time gMap =
                                             -- group.
       time'      = succ time                -- This will be the new
                                             -- time.
-  in case M.toList critGroup of
-       []       -> putzplan time  gMap'
-       (g, _):_ -> (time, g,  gMap') : putzplan time' gMap''
-                   -- Reset Score for critGroup and update
-                   -- groupMetaLast & groupMetaCrossed.
-                   where gMap'' = M.union (resetScores time critGroup) gMap'
+  in case critGroup of
+       Nothing -> putzplan $ pps { putzplanGroups = gMap' }
+       Just (g, gMeta) -> let critGroupMap = M.fromList [(g, gMeta)]
+                              gMap'' = M.union (resetScores time critGroupMap) gMap'
+                              pps' = pps { putzplanTime = time', putzplanGroups = gMap'' }
+                          in (g,  pps') : (putzplan pps')
 
 -- | Pretty printer for the Putzplan.
-printPutzplan :: Putzplan -> String
-printPutzplan [] = ""
-printPutzplan ((t, g, _) : xs) =
-  show t ++ ": " ++ g ++ "\n" ++ printPutzplan xs
+printPutzplan :: Time -> Putzplan -> String
+printPutzplan _ [] = ""
+printPutzplan t ((g, _) : xs) =
+  show t ++ ": " ++ g ++ "\n" ++ printPutzplan (succ t) xs
 
 -- | Pretty printer for the Putzplan. More verbose debug version.
-printPutzplan' :: Putzplan -> String
-printPutzplan' [] = ""
-printPutzplan' ((t, group, gMap) : xs) =
-  "[" ++ show t ++ "]\n" ++ printGroupMap gMap ++ "\n"
-    ++ "  => " ++ group ++ "\n\n" ++ printPutzplan' xs
-  where printGroupMap = M.foldlWithKey (\ a k b -> a ++ printGroupMap' k b ++ "\n") ""
-        printGroupMap' g gMeta =
-          "  " ++ g ++ ": Score = " ++ printRational (groupMetaScore gMeta)
-            ++ "; Crossed = " ++ show (groupMetaCrossed gMeta)
-            ++ "; Last = " ++ show (groupMetaLast gMeta)
+printPutzplan' :: Time -> Putzplan -> String
+printPutzplan' _ [] = ""
+printPutzplan' t ((group, pps) : xs) =
+  "[" ++ show t ++ "]\n" ++ putzplanStateDump pps ++ "\n"
+    ++ "  => " ++ group ++ "\n\n" ++ printPutzplan' (succ t) xs
 
--- | Pretty print a rational number.
-printRational :: Rational -> String
-printRational r = show (numerator r) ++ "/" ++ show (denominator r)
+putzplanStateDump :: PutzplanState -> String
+putzplanStateDump pps =
+  "PutzplanState {\n"
+  ++ "  putzplanTime = " ++ show (putzplanTime pps) ++ ",\n"
+  ++ "  putzplanGroups = \n"
+  ++ indentLines "    " (groupMapDump (putzplanGroups pps))
+  ++ "}\n"
+
+indentLines :: String -> String -> String
+indentLines indent = unlines . (map (indent ++)) . lines
+
+groupMapDump :: GroupMap -> String
+groupMapDump gMap =
+  "Data.Map.fromList [\n"
+  ++ concatMap (\ gM -> "  " ++ (dumpGroupMeta gM) ++ "\n") (M.toList gMap)
+  ++ "]\n"
+  where dumpGroupMeta (g, gMeta) =
+          "(" ++ show g ++ ", " ++ show gMeta ++ ")"
