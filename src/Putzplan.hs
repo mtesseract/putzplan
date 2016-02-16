@@ -30,19 +30,17 @@ timestamps crossed_g and last_g. crossed_g denotes the time at which
 the group g has crossed the threshold value one. last_g holds the most
 recent timestamp at which the group g had to clean.
 
-The groups start with some score s_g -- it doesn't really matter what
-that is. I initialize them to zero.
-
-To compute the next group which has to clean, the algorithm adds the
-weight w_g to each group's score s_g. All groups g whose scores s_g
-have crossed the threshold ("critical groups") have their crossed_g
-timestamp set to the current time. It then picks one of the critical
-groups taking into the consideration the groups scores &
-timestamps. To implement this, there is an ordering defined on the
-groups which does the work for us: Groups which have crossed the
-threshold earlier are 'more critical' and so are groups which had been
-picked longer ago. The picked group will have its last_g timestamp set
-to the current time and its score s_g decreased by one.
+All groups g start with some score s_g. To compute the next group
+which has to clean, the algorithm adds the weight w_g to each group's
+score s_g. All groups g whose scores s_g have crossed the threshold
+("critical groups") have their crossed_g timestamp set to the current
+time. It then picks one of the critical groups taking into the
+consideration the groups scores & timestamps. To implement this, there
+is an ordering defined on the groups which does the work for us:
+Groups which have crossed the threshold earlier are 'more critical'
+and so are groups which had been picked longer ago. The picked group
+will have its last_g timestamp set to the current time and its score
+s_g decreased by one.
 
 Time is then incremented and the next group can be computed. -MS
 
