@@ -3,7 +3,8 @@
 module Putzplan (Group, GroupInit(..), Putzplan, Time,
                  Weight, GroupInitMap,
                  putzplan, printPutzplan, printPutzplan',
-                 PutzplanState, initPutzplanState,
+                 PutzplanState(..), initPutzplanState,
+                 GroupMeta(..),
                  GroupMap, initGroupMap, groupMapDump,
                  putzplanStateDump) where
 
